@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 
 // Import all required CSS
 import 'luckysheet/dist/plugins/css/pluginsCss.css';
@@ -35,11 +35,15 @@ export default function LuckysheetScript() {
         
         // Load Luckysheet UMD file directly
         const luckysheetModule = await import('luckysheet/dist/luckysheet.umd.js');
-        window.luckysheet = luckysheetModule.default;
-        console.log('Luckysheet loaded and initialized globally');
-        
-        // Dispatch custom event when all scripts are loaded
-        window.dispatchEvent(new Event('luckysheet-ready'));
+        if (luckysheetModule.default) {
+          window.luckysheet = luckysheetModule.default;
+          console.log('Luckysheet loaded and initialized globally');
+          
+          // Dispatch custom event when all scripts are loaded
+          window.dispatchEvent(new Event('luckysheet-ready'));
+        } else {
+          throw new Error('Luckysheet module not properly loaded');
+        }
       } catch (error) {
         console.error('Error loading scripts:', error);
       }
