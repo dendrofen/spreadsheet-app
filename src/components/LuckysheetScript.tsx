@@ -2,6 +2,12 @@
 
 import React, { useEffect } from 'react';
 
+// Import all required CSS
+import 'luckysheet/dist/plugins/css/pluginsCss.css';
+import 'luckysheet/dist/plugins/plugins.css';
+import 'luckysheet/dist/css/luckysheet.css';
+import 'luckysheet/dist/assets/iconfont/iconfont.css';
+
 declare global {
   interface Window {
     $: any;

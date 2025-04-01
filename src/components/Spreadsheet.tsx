@@ -1,10 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import 'luckysheet/dist/plugins/css/pluginsCss.css';
-import 'luckysheet/dist/plugins/plugins.css';
-import 'luckysheet/dist/css/luckysheet.css';
-import 'luckysheet/dist/assets/iconfont/iconfont.css';
 import LuckysheetScript from './LuckysheetScript';
 
 declare global {
@@ -33,6 +29,7 @@ export default function Spreadsheet() {
           container: containerRef.current.id,
           title: 'My Spreadsheet',
           lang: 'en',
+          showinfobar: false,
           data: [
             {
               name: 'Sheet1',
