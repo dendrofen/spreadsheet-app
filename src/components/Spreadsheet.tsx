@@ -1,20 +1,79 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import LuckysheetScript from './LuckysheetScript';
 import Header from './Header';
 import Toolbar from './Toolbar';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+
+type LuckysheetInstance = {
+  create: (options: LuckysheetOptions) => void;
+  getAllSheets: () => any[];
+  setData: (data: any[]) => void;
+  importExcel: (file: File) => Promise<void>;
+  exportExcel: () => void;
+  on: (event: string, handler: () => void) => void;
+  off: (event: string, handler: () => void) => void;
+};
 
 declare global {
-  interface Window {
-    luckysheet: any;
-  }
+  var luckysheet: LuckysheetInstance | undefined;
+}
+
+interface LuckysheetOptions {
+  container: string;
+  title: string;
+  lang: string;
+  data: Sheet[];
+  showinfobar: boolean;
+}
+
+interface Sheet {
+  name: string;
+  color: string;
+  status: number;
+  order: number;
+  data: any[];
+  config: {
+    row: number;
+    column: number;
+    total: number;
+  };
+  index: number;
+  scrollLeft: number;
+  scrollTop: number;
+  defaultRowHeight: number;
+  defaultColWidth: number;
+  showGridLines: number;
+  celldata: any[];
 }
 
 interface SpreadsheetProps {
   shareId?: string;
 }
+
+const DEFAULT_SHEET: Sheet = {
+  name: 'Sheet1',
+  color: '',
+  status: 1,
+  order: 0,
+  data: [],
+  config: {
+    row: 84,
+    column: 60,
+    total: 84 * 60
+  },
+  index: 0,
+  scrollLeft: 0,
+  scrollTop: 0,
+  defaultRowHeight: 19,
+  defaultColWidth: 73,
+  showGridLines: 1,
+  celldata: [],
+};
+
+const JSONBLOB_API = 'https://jsonblob.com/api/jsonBlob';
 
 export default function Spreadsheet({ shareId }: SpreadsheetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -23,15 +82,27 @@ export default function Spreadsheet({ shareId }: SpreadsheetProps) {
   const [isSharing, setIsSharing] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isLuckysheetReady, setIsLuckysheetReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const containerId = 'luckysheet-container';
   const router = useRouter();
 
-  useEffect(() => {
-    const handleLuckysheetReady = () => {
-      setIsLuckysheetReady(true);
-    };
+  const showError = useCallback((message: string) => {
+    toast.error(message, {
+      duration: 4000,
+      position: 'top-right',
+    });
+  }, []);
 
+  const showSuccess = useCallback((message: string) => {
+    toast.success(message, {
+      duration: 3000,
+      position: 'top-right',
+    });
+  }, []);
+
+  const handleLuckysheetReady = useCallback(() => {
+    setIsLuckysheetReady(true);
+  }, []);
+
+  useEffect(() => {
     window.addEventListener('luckysheet-ready', handleLuckysheetReady);
 
     if (window.luckysheet) {
@@ -41,74 +112,72 @@ export default function Spreadsheet({ shareId }: SpreadsheetProps) {
     return () => {
       window.removeEventListener('luckysheet-ready', handleLuckysheetReady);
     };
+  }, [handleLuckysheetReady]);
+
+  const fetchSharedData = useCallback(async (id: string) => {
+    const response = await fetch(`${JSONBLOB_API}/${id}`);
+    if (!response.ok) throw new Error('Failed to fetch shared data');
+    return response.json();
   }, []);
 
-  useEffect(() => {
-    const initLuckysheet = async () => {
-      if (!isLuckysheetReady || !containerRef.current) return;
+  const initLuckysheet = useCallback(async () => {
+    if (!isLuckysheetReady || !containerRef.current) return;
 
-      try {
-        const options = {
-          container: containerId,
-          title: 'Spreadsheet',
-          lang: 'en',
-          data: [
-            {
-              name: 'Sheet1',
-              color: '',
-              status: 1,
-              order: 0,
-              data: [],
-              config: {
-                row: 84,
-                column: 60,
-                total: 84 * 60
-              },
-              index: 0,
-              scrollLeft: 0,
-              scrollTop: 0,
-              defaultRowHeight: 19,
-              defaultColWidth: 73,
-              showGridLines: 1,
-              celldata: [],
-            },
-          ],
-          showinfobar: false,
-        };
-        
-        if (shareId) {
-          try {
-            const response = await fetch(`https://jsonblob.com/api/jsonBlob/${shareId}`);
-            if (!response.ok) throw new Error('Failed to fetch shared data');
-            const sharedData = await response.json();
-            options.data = sharedData;
-            setCurrentBlobId(shareId);
-          } catch (error) {
-            console.info('Failed to load shared spreadsheet:', error);
-            setError('Failed to load shared spreadsheet. Starting with a new one.');
-          }
+    try {
+      const options: LuckysheetOptions = {
+        container: 'luckysheet-container',
+        title: 'Spreadsheet',
+        lang: 'en',
+        data: [DEFAULT_SHEET],
+        showinfobar: false,
+      };
+      
+      if (shareId) {
+        try {
+          const sharedData = await fetchSharedData(shareId);
+          options.data = sharedData;
+          setCurrentBlobId(shareId);
+        } catch (error) {
+          console.info('Failed to load shared spreadsheet:', error);
+          showError('Failed to load shared spreadsheet. Starting with a new one.');
         }
-
-        window.luckysheet.create(options);
-      } catch (error) {
-        console.info('Failed to initialize spreadsheet:', error);
-        setError('Failed to initialize spreadsheet');
       }
-    };
 
+      window.luckysheet.create(options);
+
+      // Add error event listener for Luckysheet after a short delay to ensure it's initialized
+      setTimeout(() => {
+        try {
+          if (window.luckysheet?.on) {
+            window.luckysheet.on('error', (error: any) => {
+              console.info('Luckysheet error:', error);
+              if (error.message?.includes('缓存操作失败')) {
+                showError('Failed to save changes. Please try again.');
+              }
+            });
+          }
+        } catch (error) {
+          console.info('Failed to add Luckysheet error listener:', error);
+        }
+      }, 100);
+    } catch (error) {
+      console.info('Failed to initialize spreadsheet:', error);
+      showError('Failed to initialize spreadsheet');
+    }
+  }, [isLuckysheetReady, shareId, fetchSharedData, showError]);
+
+  useEffect(() => {
     initLuckysheet();
-  }, [isLuckysheetReady, containerId, shareId]);
+  }, [initLuckysheet]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     try {
       setIsSharing(true);
-      setError(null);
+      
       const data = window.luckysheet.getAllSheets();
-      const response = await fetch('https://jsonblob.com/api/jsonBlob', {
+      const response = await fetch(JSONBLOB_API, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
 
@@ -119,44 +188,55 @@ export default function Spreadsheet({ shareId }: SpreadsheetProps) {
       
       setCurrentBlobId(blobId);
       router.push(`/${blobId}`);
+      showSuccess('Spreadsheet shared successfully!');
     } catch (error) {
       console.info('Failed to share spreadsheet:', error);
-      setError('Failed to share spreadsheet');
+      showError('Failed to share spreadsheet');
     } finally {
       setIsSharing(false);
     }
-  };
+  }, [router, showError, showSuccess]);
 
-  const handleUpdate = async () => {
+  const handleUpdate = useCallback(async () => {
     if (!currentBlobId) return;
     
     try {
       setIsUpdating(true);
-      setError(null);
+      
       const data = window.luckysheet.getAllSheets();
-      const response = await fetch(`https://jsonblob.com/api/jsonBlob/${currentBlobId}`, {
+      const response = await fetch(`${JSONBLOB_API}/${currentBlobId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
 
       if (!response.ok) throw new Error('Failed to update blob');
+      
+      showSuccess('Changes saved successfully');
     } catch (error) {
       console.info('Failed to update spreadsheet:', error);
-      setError('Failed to update spreadsheet');
+      showError('Failed to save changes. Please try again.');
     } finally {
       setIsUpdating(false);
     }
-  };
+  }, [currentBlobId, showError, showSuccess]);
 
-  const handleDelete = async () => {
+  // Add auto-save functionality
+  useEffect(() => {
+    if (!currentBlobId) return;
+
+    const autoSaveInterval = setInterval(() => {
+      handleUpdate();
+    }, 30000); // Auto-save every 30 seconds
+
+    return () => clearInterval(autoSaveInterval);
+  }, [currentBlobId, handleUpdate]);
+
+  const handleDelete = useCallback(async () => {
     if (!currentBlobId) return;
     
     try {
-      setError(null);
-      const response = await fetch(`https://jsonblob.com/api/jsonBlob/${currentBlobId}`, {
+      const response = await fetch(`${JSONBLOB_API}/${currentBlobId}`, {
         method: 'DELETE',
       });
 
@@ -164,35 +244,36 @@ export default function Spreadsheet({ shareId }: SpreadsheetProps) {
       
       setCurrentBlobId(null);
       router.push('/');
+      showSuccess('Spreadsheet deleted successfully');
     } catch (error) {
       console.info('Failed to delete spreadsheet:', error);
-      setError('Failed to delete spreadsheet');
+      showError('Failed to delete spreadsheet');
     }
-  };
+  }, [currentBlobId, router, showError, showSuccess]);
 
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     
     try {
-      setError(null);
       await window.luckysheet.importExcel(file);
       event.target.value = ''; // Reset file input
+      showSuccess('File imported successfully');
     } catch (error) {
       console.info('Failed to import file:', error);
-      setError('Failed to import file');
+      showError('Failed to import file');
     }
-  };
+  }, [showError, showSuccess]);
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     try {
-      setError(null);
       window.luckysheet.exportExcel();
+      showSuccess('File exported successfully');
     } catch (error) {
       console.info('Failed to export file:', error);
-      setError('Failed to export file');
+      showError('Failed to export file');
     }
-  };
+  }, [showError, showSuccess]);
 
   return (
     <div className="size-full bg-gray-50">
@@ -210,23 +291,9 @@ export default function Spreadsheet({ shareId }: SpreadsheetProps) {
         onExport={handleExport}
         fileInputRef={fileInputRef}
       />
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-400 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="container mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow-lg overflow-hidden relative">
-          <div id={containerId} ref={containerRef} className="w-full h-[600px]" />
+          <div id="luckysheet-container" ref={containerRef} className="w-full h-[600px]" />
         </div>
       </div>
     </div>
