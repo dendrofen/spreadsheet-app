@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import LuckysheetScript from './LuckysheetScript';
 import Header from './Header';
 import Toolbar from './Toolbar';
+import { useRouter } from 'next/navigation';
 
 declare global {
   interface Window {
@@ -11,15 +12,20 @@ declare global {
   }
 }
 
-export default function Spreadsheet() {
+interface SpreadsheetProps {
+  shareId?: string;
+}
+
+export default function Spreadsheet({ shareId }: SpreadsheetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
-  const [currentBlobId, setCurrentBlobId] = useState<string | null>(null);
+  const [currentBlobId, setCurrentBlobId] = useState<string | null>(shareId || null);
   const [isSharing, setIsSharing] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isLuckysheetReady, setIsLuckysheetReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const containerId = 'luckysheet-container';
+  const router = useRouter();
 
   useEffect(() => {
     const handleLuckysheetReady = () => {
@@ -69,17 +75,14 @@ export default function Spreadsheet() {
           ],
           showinfobar: false,
         };
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const blobId = urlParams.get('blob');
         
-        if (blobId) {
+        if (shareId) {
           try {
-            const response = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`);
+            const response = await fetch(`https://jsonblob.com/api/jsonBlob/${shareId}`);
             if (!response.ok) throw new Error('Failed to fetch shared data');
             const sharedData = await response.json();
             options.data = sharedData;
-            setCurrentBlobId(blobId);
+            setCurrentBlobId(shareId);
           } catch (error) {
             console.info('Failed to load shared spreadsheet:', error);
             setError('Failed to load shared spreadsheet. Starting with a new one.');
@@ -94,7 +97,7 @@ export default function Spreadsheet() {
     };
 
     initLuckysheet();
-  }, [isLuckysheetReady, containerId]);
+  }, [isLuckysheetReady, containerId, shareId]);
 
   const handleShare = async () => {
     try {
@@ -115,8 +118,7 @@ export default function Spreadsheet() {
       if (!blobId) throw new Error('No blob ID received');
       
       setCurrentBlobId(blobId);
-      const shareUrl = `${window.location.origin}${window.location.pathname}?blob=${blobId}`;
-      window.location.href = shareUrl;
+      router.push(`/${blobId}`);
     } catch (error) {
       console.info('Failed to share spreadsheet:', error);
       setError('Failed to share spreadsheet');
@@ -161,7 +163,7 @@ export default function Spreadsheet() {
       if (!response.ok) throw new Error('Failed to delete blob');
       
       setCurrentBlobId(null);
-      window.history.replaceState({}, '', window.location.pathname);
+      router.push('/');
     } catch (error) {
       console.info('Failed to delete spreadsheet:', error);
       setError('Failed to delete spreadsheet');
